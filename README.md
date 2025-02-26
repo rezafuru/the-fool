@@ -37,6 +37,20 @@ TODO
 
 # Citation
 
+[[TMC]](https://ieeexplore.ieee.org/document/10897922)
+```bibtex
+@ARTICLE{10897922,
+  author={Furutanpey, Alireza and Zhang, Qiyang and Raith, Philipp and Pfandzelter, Tobias and Wang, Shangguang and Dustdar, Schahram},
+  journal={IEEE Transactions on Mobile Computing}, 
+  title={FOOL: Addressing the Downlink Bottleneck in Satellite Computing with Neural Feature Compression}, 
+  year={2025},
+  volume={},
+  number={},
+  pages={1-18},
+  keywords={Downlink;Satellites;Image coding;Sensors;Costs;Predictive models;Earth;Space vehicles;Extraterrestrial measurements;Computational modeling;Edge Computing;Edge Intelligence;Orbital Edge Computing;Low Earth Orbit;Satellite Inference;Data Compression;Learned Image Compression;Neural Feature Compression},
+  doi={10.1109/TMC.2025.3544516}}
+```
+
 [[Preprint]](https://arxiv.org/abs/2403.16677)
 
 ```bibtex
