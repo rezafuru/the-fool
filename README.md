@@ -5,8 +5,14 @@ I will gradually release the code, when the work is deeper into the review cycle
 Since the preprocessing of the dataasets and the preparation of the detection models is very intricate, I'm trying to figure out the logistics behind minimizing the amount of effort required to reproduce the experiments.
 Moreover, if I think it's worthwhile to include the code for the systems related aspects (the codec in the compression pipeline should be exchangable) of this work, I'll create a separate repository, i.e., this repository will exclusively contain code for the core compression method.
 
-Apolgies in advance, I wish I had the time and patience to create one of those very fancy and usuable repositories that are easily usable out of the box (For those I'm extremely grateful for, as they make excellent educational material).
+Apolgies in advance, I wish I had the time and patience to create one of those very fancy and well-maintained repositories that are usable out of the box (For those I'm extremely grateful for, as they make excellent educational material).
 However, if you are particularly interested in the work, and would like to have access to certain parts of the code, please write me a mail to **a.furutanpey@dsg.tuwien.ac.at**. I'd also be more than happy, to step through the relevant parts with you, especially, if you'd like to discuss potential collaboration for a follow-up.
+
+# Updates
+
+- The paper has finally been accepted to IEEE Transactions on Mobile Computing! I'm currently occupied with wrapping up my remaining work for my PhD, but I'll do my best to clean-up and release a (hopefully easy-to-use) version ASAP.
+- If you are interested in this line of research, my related work on [Adversarial Robustness of Bottleneck Injected Deep Neural Networks for Task-Oriented Communication](https://arxiv.org/abs/2412.10265) has been accepted to IEEE ICMLCN 2025 
+
 
 # Description
 TODO
