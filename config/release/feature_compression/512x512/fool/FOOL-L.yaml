@@ -1,0 +1,272 @@
+config_ultralytics:
+  path: 'external/ultralytics_yolo/cfg/default.yaml'
+
+input_spatial_dim: &spatial_dim 512
+size: &input_size [ *spatial_dim, *spatial_dim ]
+root_dir_datasets: &root_dir_datasets !join [ '~/resources/datasets/' ]
+dota_filename: &dota_filename 'DOTA-2_tiled_filtered_512x512'
+airbus_filename: &airbus_filename 'airbus_aircraft_detection_tiled_filtered_512x512'
+aerial_crowd_filename: &aerial_crowd_filename 'DLR_AerialCrowdDataset_tiled_filtered_512x512'
+hrplanesv2_filename: &hrplanesv2_filename 'hrplanesv2_train_tiled_filtered_512x512'
+oil_tanks_filename: &oil_tanks_filename 'oil_tanks_tiled_filtered_512x512'
+rare_planes_filename: &rare_planes_filename 'rare_planes_tiled_filtered_512x512'
+spacenet_6_filename: &spacenet_6_filename 'spacenet-6_tiled_filtered_512x512'
+spacenet_7_filename: &spacenet_7_filename 'spacenet-7_tiled_filtered_512x512'
+spacenet_8_filename: &spacenet_8_filename 'spacenet-8_tiled_filtered_512x512'
+floodnet: &floodnet_filename 'floodnet_tiled_filtered_512x512'
+datasets:
+  sequenced:
+    name: &sequenced_dataset_name 'DOTA-2_tiled_filtered_512x512_n=5' # todo: Replace with merged
+    type: 'MultiVideoFolder'
+    splits:
+      train:
+        dataset_id: &sequenced_train !join [ *sequenced_dataset_name, '/train' ]
+        params:
+          roots: [
+            !join [ *root_dir_datasets, '/leo/tiled/', *floodnet_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *airbus_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *aerial_crowd_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *hrplanesv2_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *oil_tanks_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *rare_planes_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *spacenet_6_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *spacenet_7_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *spacenet_8_filename],
+          ]
+          split: 'train_sequenced'
+          max_frames: &seq_len 5
+          rnd_interval: False
+          transform_params:
+            - &totensor
+              type: 'ToTensor'
+              params:
+            - type: 'RandomHorizontalFlip'
+              params:
+                p: 0.5
+  dota:
+    name: *dota_filename
+    type: 'VideoFolder'
+    dota_root: &root_dir_dota !join [ *root_dir_datasets, *dota_filename ]
+    splits:
+      val:
+        dataset_id: &dota_val !join [ *dota_filename, '/val' ]
+        params:
+          root: *root_dir_dota
+          split: 'val_sequenced'
+          max_frames: *seq_len
+          rnd_interval: False
+          transform_params:
+            - *totensor
+
+model:
+  lmbda: &lmbda 0.096
+  primary: &primary 64
+  secondary: &secondary 64
+  tertiary: &tertiary 128
+  channels_hypernetwork: &channels_hypernetwork 64
+  target_channels: &target_channels 192
+  #  target_channels: &target_channels 960  # seq_len * target
+
+  yolo_base: &yolo_base 'yolov8m'
+  teacher:
+    name: &teacher_model_name 'get_ultralytics_model'
+    params:
+      split_idx: 4
+      prune_tail: True
+      predict_frames: True
+      name: &model_path !join [ 'resources/weights/ultralytics/', *yolo_base,  '-dota2-tiled_filtered_512x512.pt' ]
+    ckpt: 'skip'
+  student:
+    name: 'network_with_bottleneck_injection'
+    main_metric: 'metrics/mAP50(B)'
+    params:
+      network_type: 'DiscriminativeModelWithBottleneck'
+      #      analyzers_config:
+      #        analyze_after_compress: False
+      #        analyzers_config:
+      compression_module_config:
+        name: 'SideinfoWithKPCATT'
+        params:
+          detach_input_from_kps: True
+          recon_ca_latent: True
+          small_ds: True
+          num_keypoints:  16384
+          attention_config:
+            attention_block_config:
+              type: 'CrossAttentionBlockCheng'
+              params:
+                N: *secondary
+                blocks_after_att: 1
+            no_blocks: 1
+          gaussian_params_channels: *primary
+          entropy_bottleneck_channels: *channels_hypernetwork
+          hyper_network_config:
+            name: 'HypernetworkWithResidualBlocks'
+            params:
+              mshp: True
+              eb_channels: *channels_hypernetwork
+              gc_channels: *secondary
+          analysis_config:
+            name: &analysis 'SequencedAnalysisWith3DAttention'
+            params:
+              seq_len: 3
+              stack_feature_frames: True
+              in_channels: 3
+              block_channels: [ *primary, *secondary, *secondary ]
+              target_channels: *secondary
+              use_attn: [ False, True, True, True ]
+              downsample_factor: 8
+          synthesis_config:
+            name: &synthesis 'SequencedSynthesisWith3DAttention'
+            params:
+              seq_len: 3
+              channels: [ *secondary,*secondary,  *tertiary, *tertiary, *target_channels ]
+              upsample_factor: 1
+              use_attn: [ True, True, True, False ]
+      backbone_module_config:
+        name: *teacher_model_name
+        params:
+          predict_frames: False
+          name: *model_path
+          split_idx: 4
+          prune_tail: False
+    experiment: &experiment_name !join [ *analysis, '-', *synthesis, '-', *lmbda, '-', *yolo_base ]
+    ckpt: !join [ 'resources/weights/checkpoint/release/att_3d_with_keypoints512x512-','l=', *lmbda, '.pt' ]
+train:
+  enable_mp: False
+  log_freq: 2000
+  epoch_to_update: &epoch_to_update 12
+  aux_loss_epochs: 100
+  eval_metrics:
+    - name: 'bpp'
+      params:
+        eval_args:
+          test_mode: False
+    - name: 'map'
+      params:
+        eval_args:
+          &ultralytics_default_overrides
+          ultralytics_default_overrides:
+            project: resources
+            name: eval-ultralytics-yolo
+            iou: 0.65
+            batch: *seq_len
+            imgsz: *spatial_dim
+            data: external/ultralytics_yolo/cfg/datasets/dota-v2.0-tiled_filtered.yaml
+            save_json: False
+            save_hybrid: False
+            plots: True
+            workers: 4
+            exist_ok: True  # (bool) whether to overwrite existing experiment
+          empty_cache: True
+  num_epochs: *epoch_to_update
+  train_data_loader:
+    dataset_id: *sequenced_train
+    random_sample: True
+    batch_size: 6
+    num_workers: 2
+    cache_output:
+  val_data_loaders:
+    external/ultralytics_yolo/cfg/datasets/dota-v2.0-tiled.yaml:
+      dataset_id: *dota_val
+      random_sample: False
+      batch_size: 1
+      num_workers: 1
+      cache_output:
+  teacher:
+    #    sequential: [ 'model.0', 'model.1', 'model.2', 'model.3' ]
+    sequential: [ ]
+    frozen_modules: [ ]
+    forward_hook:
+      input: [ ]
+      output: [ ]
+#    wrapper: 'DistributedDataParallel'
+    requires_grad: False
+  student:
+    sequential: [ 'compression_module' ]
+    frozen_modules: [ 'backbone', 'compression_module.kp_detector' ]
+    forward_hook:
+      input: [ ]
+      output: [ 'compression_module', 'compression_module.entropy_bottleneck', 'compression_module.gaussian_conditional' ]
+    requires_grad: True
+#    wrapper: 'DistributedDataParallel'
+  optimizer:
+    type: 'Adam'
+    params:
+      lr: 0.001
+    max_grad_norm: 1.0
+  #    module_wise_params: [
+  #      { params: { lr: 0.001 }, module: 'compression_module' },
+  #    ]
+  scheduler:
+    type: 'ExponentialLR'
+    params:
+      # decay_factor = 1000
+      # gamma = (1 / decay_factor) ** (1 / epochs)
+      # lr last epoch = 1e-6
+      gamma: 0.7943
+  criterion:
+    type: 'LazyGeneralizedCustomLoss'
+    org_term:
+      factor: 0.0
+    sub_terms:
+      distortion:
+        criterion:
+          type: 'SeqMSELoss'
+          params:
+            reduction: 'sum'
+        params:
+          input:
+            is_from_teacher: False
+            module_path: 'compression_module'
+            io: 'output'
+          target:
+            is_from_teacher: True
+            module_path: "full"
+            io: "output"
+        factor: 1.0
+      bitrate_z:
+        criterion:
+          type: 'BppLoss'
+          params:
+            entropy_module_path: 'compression_module.entropy_bottleneck'
+            reduction: 'sum'
+        factor: *lmbda
+      bitrate_y:
+        criterion:
+          type: 'BppLoss'
+          params:
+            entropy_module_path: 'compression_module.gaussian_conditional'
+            reduction: 'sum'
+        factor: *lmbda
+
+
+test:
+  eval_metrics:
+    - name: 'bpp'
+      params:
+        eval_args:
+          test_mode: False
+    - name: 'map'
+      params:
+        eval_args:
+          *ultralytics_default_overrides
+  test_data_loaders:
+    external/ultralytics_yolo/cfg/datasets/dota-v2.0-tiled.yaml:
+      dataset_id: *dota_val
+      random_sample: False
+      batch_size: 1
+      num_workers: 1
+      cache_output:
+
+wandb:
+  scalar_freq: 10000
+  viz_freq: 2000
+  remote:
+    project_name: !join [ 'release-3d-att' ]
+    entity: '<YOUR_WANDB_ENTITY>'
+    tags: [ ]
+    run_name: !join [ 'with_keypoints-n=', *seq_len, '-l=', *lmbda ]
+
+    #    group: 'fp-fp'
+    enabled: False

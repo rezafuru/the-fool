@@ -1,0 +1,227 @@
+config_ultralytics:
+  path: 'external/ultralytics_yolo/cfg/default.yaml'
+
+
+primary: &primary 64
+secondary: &secondary 96
+tertiary: &tertiary 180
+channels_hypernetwork: &channels_hypernetwork 96
+target_channels: &target_channels 192
+input_spatial_dim: &spatial_dim 256
+size: &input_size [ *spatial_dim, *spatial_dim ]
+root_dir_datasets: &root_dir_datasets !join [ '~/resources/datasets/' ]
+dota_filename: &dota_filename 'DOTA-2_tiled_filtered_512x512'
+airbus_filename: &airbus_filename 'airbus_aircraft_detection_tiled_filtered_512x512'
+aerial_crowd_filename: &aerial_crowd_filename 'DLR_AerialCrowdDataset_tiled_filtered_512x512'
+hrplanesv2_filename: &hrplanesv2_filename 'hrplanesv2_train_tiled_filtered_512x512'
+oil_tanks_filename: &oil_tanks_filename 'oil_tanks_tiled_filtered_512x512'
+rare_planes_filename: &rare_planes_filename 'rare_planes_tiled_filtered_512x512'
+spacenet_6_filename: &spacenet_6_filename 'spacenet-6_tiled_filtered_512x512'
+spacenet_7_filename: &spacenet_7_filename 'spacenet-7_tiled_filtered_512x512'
+spacenet_8_filename: &spacenet_8_filename 'spacenet-8_tiled_filtered_512x512'
+floodnet: &floodnet_filename 'floodnet_tiled_filtered_512x512'
+datasets:
+  sequenced:
+    name: &sequenced_dataset_name 'DOTA-2_tiled_filtered_512x512_n=5' # todo: Replace with merged
+    type: 'MultiVideoFolder'
+    splits:
+      train:
+        dataset_id: &sequenced_train !join [ *sequenced_dataset_name, '/train' ]
+        params:
+          roots: [
+            !join [ *root_dir_datasets, '/leo/tiled/', *floodnet_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *airbus_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *aerial_crowd_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *hrplanesv2_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *oil_tanks_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *rare_planes_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *spacenet_6_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *spacenet_7_filename],
+            !join [ *root_dir_datasets, '/leo/tiled/', *spacenet_8_filename],
+          ]
+          split: 'train_sequenced'
+          max_frames: &seq_len 5
+          rnd_interval: False
+          transform_params:
+            - &totensor
+              type: 'ToTensor'
+              params:
+            - type: 'RandomHorizontalFlip'
+              params:
+                p: 0.5
+  dota:
+    name: *dota_filename
+    type: 'VideoFolder'
+    dota_root: &root_dir_dota !join [ *root_dir_datasets, *dota_filename ]
+    splits:
+      val:
+        dataset_id: &dota_val !join [ *dota_filename, '/val' ]
+        params:
+          root: *root_dir_dota
+          split: 'val_sequenced'
+          max_frames: *seq_len
+          rnd_interval: False
+          transform_params:
+            - *totensor
+
+
+model:
+  #  target_channels: &target_channels 960  # seq_len * target
+  main_metric: 'psnr'
+  name: 'SequenceReconModelWithFeatureExtractor'
+  params:
+    seq_len: *seq_len
+    feature_extractor_config:
+      name: 'SideinfoWithKPCATT'
+      params:
+        detach_input_from_kps: True
+        recon_ca_latent: True
+        num_keypoints:  16384
+        attention_config:
+          attention_block_config:
+            type: 'CrossAttentionBlockCheng'
+            params:
+              N: *secondary
+              blocks_after_att: 1
+          no_blocks: 1
+          use_checkpoint: &use_checkpoint True
+        gaussian_params_channels: *primary
+        entropy_bottleneck_channels: *channels_hypernetwork
+        hyper_network_config:
+          name: 'HypernetworkWithResidualBlocks'
+          params:
+            mshp: True
+            eb_channels: *channels_hypernetwork
+            gc_channels: *secondary
+        analysis_config:
+          name: &analysis 'SequencedAnalysisWith3DAttention'
+          params:
+            seq_len: *seq_len
+            stack_feature_frames: True
+            in_channels: 3
+            block_channels: [ *primary, *secondary, *secondary ]
+            target_channels: *secondary
+            use_attn: [ False, True, True, True ]
+            downsample_factor: &downsample_factor 8
+        synthesis_config:
+          name: &synthesis 'IdentityLayer'
+          params:
+            cool: 'beans'
+#            seq_len: *seq_len
+#            channels: [ *secondary,*secondary,  *tertiary, *tertiary, *target_channels ]
+#            upsample_factor: 1
+#            use_attn: [ True, True, True, False ]
+
+
+    recon_model_name: 'SwinIR'
+    recon_model_config:
+      upscale: *downsample_factor
+      in_chans: *secondary
+      out_chans: 3
+      img_size: 32  # in_size // downsample_factor
+      window_size: 8
+      img_range: 1.0
+      embed_dim: 60
+      # use_checkpoint: *use_checkpoint
+      use_checkpoint: True
+      depths: [ 6, 6, 6, 6 ]
+#      depths: [ 6, 6, 6 ]
+      num_heads: [ 6, 6, 6, 6 ]
+#      num_heads: [ 6, 6, 6 ]
+      mlp_ratio: 2
+      upsampler: 'pixelshuffle'
+      resi_connection: '1conv'
+  ckpt: !join [ 'resources/weights/checkpoint/image_recon/swinir/test.pt ' ]
+  pretrained_weights: 'resources/weights/image_recon/pre_trained_weights/256x256/att_3d_with_keypoints_n=5_l=0.072.pt'
+train:
+  enable_mp: True
+  log_freq: 500
+  epoch_to_update: &epoch_to_update 150
+  aux_loss_epochs: -1
+  eval_metrics:
+    - name: 'recon-feature'
+      params:
+        eval_args:
+          resize_to: [*spatial_dim, *spatial_dim]
+          test_mode: False
+        viz_on_best_args:
+          viz_frames_root: 'qualitative/frames/leo/dota'
+          file_prefix: 'swinir-test'
+          output_viz_root: 'resources/qualitative/image_recon/viz/eval'
+          downsample_factor_result: 1
+  num_epochs: *epoch_to_update
+  train_data_loader:
+    dataset_id: *sequenced_train
+    random_sample: True
+    batch_size: 16
+    num_workers: 4
+    cache_output:
+  val_data_loaders:
+    external/ultralytics_yolo/cfg/datasets/dota-v2.0-tiled.yaml:
+      dataset_id: *dota_val
+      random_sample: False
+      batch_size: 1
+      num_workers: 1
+      cache_output:
+  model:
+    sequential: [  ]
+    frozen_modules: [ 'feature_extractor' ]
+    forward_hook:
+      input: [ ]
+      output: [ ]
+    requires_grad: True
+  #    wrapper: 'DistributedDataParallel'
+  optimizer:
+    type: 'Adam'
+    params:
+      lr: 0.0002
+  #    max_grad_norm: 1.0
+#      module_wise_params: [
+#        { params: { lr: 0.0002 }, module: 'recon_model' },
+#      ]
+  scheduler:
+    type: 'ReduceLROnPlateau'
+    params:
+      mode: 'max'
+      patience: 20
+      verbose: True
+      factor: 0.5
+  criterion:
+    type: 'LazyGeneralizedCustomLossNoKd'
+    org_term:
+      factor: 0.0
+    sub_terms:
+      charbonnier-loss:
+        criterion:
+          type: 'SeqLossWrapper'
+          params:
+            loss_name: &loss_name 'CharbonnierLoss'
+            loss_params:
+              reduction: 'mean'
+        factor: 1.0
+
+
+test:
+  eval_metrics:
+    - name: 'recon-feature'
+      params:
+        eval_args:
+          test_mode: False
+  test_data_loaders:
+    external/ultralytics_yolo/cfg/datasets/dota-v2.0-tiled.yaml:
+      dataset_id: *dota_val
+      random_sample: False
+      batch_size: 1
+      num_workers: 1
+      cache_output:
+
+wandb:
+  scalar_freq: 10000
+  viz_freq: 2000
+  remote:
+    project_name: !join [ 'release-recon-from-compressed-features' ]
+    entity: 'furu'
+    tags: [ ]
+    run_name: !join [ 'swinir-orig_paper_configs-base_sr',*loss_name ]
+    #    group: 'fp-fp'
+    enabled: True

@@ -1,0 +1,18 @@
+#path: /media/reza/f49c2356-9d18-4385-b433-803e3d56e4991/datasets/NWPU-VHR-10/processed/
+#path:  /home/anna/resources/datasets/NWPU-VHR-10/processed  # dataset root dir
+path: ~/resources/datasets/NWPU-VHR-10/processed/
+train: images/train  # train images (relative to path) 118287 images
+val: images/val  # val images (relative to 'path') 5000 images
+
+# Classes
+names:
+  0: airplane
+  1: ship
+  2: storage tank
+  3: baseball diamond
+  4: tennis court
+  5: basketball court
+  6: ground track field
+  7: harbor
+  8: bridge
+  9: vehicle

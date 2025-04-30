@@ -1,0 +1,13 @@
+path: ~/resources/datasets/SpaceNet-3-OD-custom-split_tiled_filtered_512x512
+train: images/train
+val: images/val
+
+
+names:
+  0: Motorway
+  1: Primary
+  2: Secondary
+  3: Tertiary
+  4: Residential
+  5: Unclassified
+  6: Car track

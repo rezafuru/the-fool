@@ -1,0 +1,18 @@
+torch==2.1.0
+torchvision==0.16.2
+lpips==0.1.4
+ultralytics==8.3.13
+timm==1.0.10
+compressai==1.2.4
+torchinfo==1.8.0
+albumentations==1.4.18
+kornia==0.7.3
+kornia-moons==0.2.9
+kornia_rs==0.1.5
+pytorch_msssim==1.0.0
+einops==0.8.0
+pandas
+matplotlib
+seaborn
+wandb==0.19.10
+numpy==1.26.4  # downgrade to last numpy 1 version for Pyorch 2.1 compatibility

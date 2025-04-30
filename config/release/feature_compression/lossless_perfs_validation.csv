@@ -1,0 +1,3 @@
+dataset,size,mAP@50,mAP@50:95
+dota-tiled-filtered-512x512,512,0.5309,0.3314
+dota-tiled-filtered-512x512,256,0.414,0.2468
