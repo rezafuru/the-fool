@@ -1,5 +1,5 @@
-torch==2.1.0
-torchvision==0.16.2
+torch>=2.1.0
+torchvision>=0.16.2
 lpips==0.1.4
 ultralytics==8.3.13
 timm==1.0.10
